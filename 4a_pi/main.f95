@@ -1,40 +1,83 @@
+module mod_calc
+	implicit none 
 
-program main
-        use mpi
-        use mod_calc
-        !
-        implicit none
-        ! for MPI
-        integer :: ierr ! Fehlercode
-        integer :: rank, status(MPI_STATUS_SIZE)
-        !
-        integer, parameter :: cpus = 4 !number of used cpus
-        integer(kind=4), parameter :: numberOfSegments = int(1e9) ! Anzahl der Stützstellen für das Integral
-        double precision, parameter :: lowerBoundary = 0 ! Untergrenze für das Integral
-        double precision, parameter :: upperBoundary = 1 ! Obergrenze für das Integral
-        double precision :: temp, summe ! Zwischenspeicher für Ergebnis
-        integer :: i !Schleifencounter
-        double precision :: stepSize ! Größe der Abschnitte die einzeln gerechnet werden
-        stepSize = (upperBoundary - lowerBoundary)/cpus
+contains
+	! subroutine polynom(x)
+	! subroutine sliceRec(lowerBoundary, upperBoundary, result)
+	! subroutine sliceTri(lowerBoundary, upperBoundary, result)
+	! subroutine integral(lowerBoundary, upperBoundary, numberSlices, result)
 
 
-        call mpi_init(ierr)
-        call mpi_comm_rank(mpi_comm_world, rank, ierr)
+	! Berechnet den Wert der Funktion:
+	!	f(x) = 4(1 + x*x)
+	! Rückgabe über x!
+	subroutine polynom(x)
+		double precision, intent(inout) :: x ! x = y
+        
+	        x = 4/(1 + x*x)
+	end subroutine
+	
 
-        call integral((rank * stepSize), ((rank + 1) * stepSize), (numberOfSegments/cpus), temp)
+	! Rechteckmethode
+	! Integral über Interval zwischen lowerBoundary und upperBoundary
+	!	über das Polynom der subroutine polynom(x)
+	! Rückgabe über result
+	subroutine sliceRec(lowerBoundary, upperBoundary, result)
+		double precision, intent(in) :: lowerBoundary, upperBoundary ! Ober- und Untergrenze des Integrals
+		double precision, intent(inout) :: result ! Rückgabewert
+		
+		! Bildung des arithmetischen Mittels zwischen Ober- und Untergrenze
+		result = (lowerBoundary + upperBoundary) /2
+		! Funktionswert für den Mittelwert
+		call polynom(result)
+		! Multiplikation mit Breite des Abschnitts
+		result = result * (upperBoundary - lowerBoundary)
+	end subroutine sliceRec
+	
 
-        select case (rank)
-        case (0) !master
-                summe = temp
-                do i = 1, (cpus -1)
-                        call mpi_recv(temp, 1, mpi_double, i, 2017, mpi_comm_world, status, ierr)
-                        summe = summe + temp
-                end do
-                print *, "pi: ", summe
-        case default
-                call mpi_send(temp, 1, mpi_double, 0, 2017, mpi_comm_world, ierr)
-        end select
+	! Trapezmethode
+	! Integral über Interval zwischen lowerBoundary und upperBoundary
+	!	über das Polynom der subroutine polynom(x)
+	! Rückgabe über result
+	subroutine sliceTri(lowerBoundary, upperBoundary, result)
+		double precision, intent(in) :: lowerBoundary, upperBoundary ! Ober- und Untergrenze des Integrals
+		double precision, intent(inout) :: result ! Rückgabewert
+		double precision :: y1, y2 ! Zwischenspeicher für Funktionswerte
+		
+		! Funktionswert für die Unergrenze
+		result = lowerBoundary
+		call polynom(result)
+		! Multiplikation mit Breite des Abschnitts
+		result = result * (upperBoundary - lowerBoundary)
+		! Aufrechnen des Dreiecks
+		y1 = lowerBoundary
+		y2 = upperBoundary
+		call polynom(y1)
+		call polynom(y2)
+		result = result + (upperBoundary - lowerBoundary) * abs(y1 - y2)
+	end subroutine sliceTri
+	
+	
+	! Berechnet das Integral 
+	subroutine integral(lowerBoundary, upperBoundary, numberSlices, result)
+		double precision, intent(in) :: lowerBoundary, upperBoundary ! Ober- und Untergrenze des Integrals
+		double precision, intent(inout) :: result ! Rückgabewert
+		double precision :: temp ! Zwischenspeicher für einzelne Slices
+		integer(kind=4) :: numberSlices ! Anzahl der Stützstellen für die Berechnung des Integrals
+		integer(kind=4) :: i ! Schleifenvariable
 
-        call mpi_finalize(ierr)
-
-end program
+		! Reset der Rückgabevariablen
+		result = 0
+		! Iteration über Teilabschnitte
+		do i = 1, numberSlices
+			! Integral für einzelnen Abschnitt
+			call sliceRec( &
+				&lowerBoundary + dble(i -1)/numberSlices * (upperBoundary - lowerBoundary), &
+				&lowerBoundary + dble(i)/numberSlices * (upperBoundary - lowerBoundary), &
+				&temp )
+			! Aufsummieren
+			result = result + temp
+		end do
+	end subroutine integral
+	
+end module
